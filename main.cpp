@@ -7,7 +7,7 @@
 constexpr int width  = 128;
 constexpr int height = 128;
 
-constexpr TGAColor white   = {255, 255, 255, 255}; // attention, BGRA order
+constexpr TGAColor white   = {255, 255, 255, 255}; // bGRA order
 constexpr TGAColor green   = {  0, 255,   0, 255};
 constexpr TGAColor red     = {  0,   0, 255, 255};
 constexpr TGAColor blue    = {255, 128,  64, 255};
@@ -42,14 +42,13 @@ double signed_triangle_area(int ax, int ay, int bx, int by, int cx, int cy) {
     return .5*((by-ay)*(bx+ax) + (cy-by)*(cx+bx) + (ay-cy)*(ax+cx));
 }
 
-void triangle(int ax, int ay, int az, int bx, int by, int bz, int cx, int cy, int cz, TGAImage &framebuffer) {
+void triangle(int ax, int ay, int az, int bx, int by, int bz, int cx, int cy, int cz,  TGAImage &zbuffer, TGAImage &framebuffer, TGAColor color) {
     int bbminx = std::min(std::min(ax, bx), cx); // bounding box for the triangle
     int bbminy = std::min(std::min(ay, by), cy); // defined by its top left and bottom right corners
     int bbmaxx = std::max(std::max(ax, bx), cx);
     int bbmaxy = std::max(std::max(ay, by), cy);
     double total_area = signed_triangle_area(ax, ay, bx, by, cx, cy);
     if (total_area<1) return; // backface culling + discarding triangles that cover less than a pixel
-
 
 #pragma omp parallel for
     for (int x=bbminx; x<=bbmaxx; x++) {
@@ -58,33 +57,42 @@ void triangle(int ax, int ay, int az, int bx, int by, int bz, int cx, int cy, in
             double beta  = signed_triangle_area(x, y, cx, cy, ax, ay) / total_area;
             double gamma = signed_triangle_area(x, y, ax, ay, bx, by) / total_area;
             if (alpha<0 || beta<0 || gamma<0) continue; // negative barycentric coordinate => the pixel is outside the triangle
-            if (!(alpha<0.1 || beta<0.1 || gamma<0.1)) continue;
-            //unsigned char z = static_cast<unsigned char>(alpha * az + beta * bz + gamma * cz);
-            TGAColor z = {static_cast<unsigned char>(alpha * 255), 
-                static_cast<unsigned char>(beta*255), 
-                static_cast<unsigned char>(gamma *255), 
-                255};
-            framebuffer.set(x, y, {z});
+            unsigned char z = static_cast<unsigned char>(alpha * az + beta * bz + gamma * cz);
+            if (z <= zbuffer.get(x, y)[0]) continue; // if current z is behind last buffer drawn we skip
+            zbuffer.set(x, y, {z}); // z converted to color
+            framebuffer.set(x, y, color);
         }
     }
 }
 
 
-std::tuple<int,int> project(vec3 v) { // First of all, (x,y) is an orthogonal projection of the vector (x,y,z).
-    return { (v.x + 1.) *  width/2,   // Second, since the input models are scaled to have fit in the [-1,1]^3 world coordinates,
-             (v.y + 1.) * height/2 }; // we want to shift the vector (x,y) and then scale it to span the entire screen.
+std::tuple<int,int,int> project(vec3 v) { // First of all, (x,y) is an orthogonal projection of the vector (x,y,z).
+    return { (v.x + 1.) *  width/2,       // Second, since the input models are scaled to have fit in the [-1,1]^3 world coordinates,
+             (v.y + 1.) * height/2,       // we want to shift the vector (x,y) and then scale it to span the entire screen.
+             (v.z + 1.) *   255./2 };
 }
+
 
 int main(int argc, char** argv) {
-    TGAImage framebuffer(width, height, TGAImage::RGBA);
+    if (argc != 2) {
+        std::cerr << "Usage: " << argv[0] << " obj/model.obj" << std::endl;
+        return 1;
+    }
 
-    int ax = 17, ay =  4, az =  13;
-    int bx = 55, by = 39, bz = 128;
-    int cx = 23, cy = 59, cz = 255;
+    Model model(argv[1]);
+    TGAImage framebuffer(width, height, TGAImage::RGB);
+    TGAImage     zbuffer(width, height, TGAImage::GRAYSCALE);
 
-    triangle(ax, ay, az, bx, by, bz, cx, cy, cz, framebuffer);
+    for (int i=0; i<model.nfaces(); i++) { // iterate through all triangles
+        auto [ax, ay, az] = project(model.vert(i, 0));
+        auto [bx, by, bz] = project(model.vert(i, 1));
+        auto [cx, cy, cz] = project(model.vert(i, 2));
+        TGAColor rnd;
+        for (int c=0; c<3; c++) rnd[c] = std::rand()%255;
+        triangle(ax, ay, az, bx, by, bz, cx, cy, cz, zbuffer, framebuffer, rnd);
+    }
 
     framebuffer.write_tga_file("framebuffer.tga");
+    zbuffer.write_tga_file("zbuffer.tga");
     return 0;
 }
-
