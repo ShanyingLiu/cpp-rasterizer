@@ -102,7 +102,7 @@ inline vec3 cross(const vec3& a, const vec3& b) {
     };
 }
 
-inline int dot(const vec3& a , const vec3& b){
+inline float dot(const vec3& a , const vec3& b){
     return a.x * b.x + a.y * b.y + a.z * b.z;
 }
 
