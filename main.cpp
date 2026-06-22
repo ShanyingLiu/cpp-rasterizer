@@ -33,33 +33,36 @@ struct PhongShader : IShader {
     vec3 uniform_l; // correctly transformed light dir
     mutable TGAColor color = {};
     vec3 tri[3];  // triangle in eye coordinates
+    vec3 varying_nrm[3]; // normal per vertex to be interpolated by the fragment shader
 
-    PhongShader(const Model &m, vec3 light_dir) : model(m), uniform_l(light_dir) {
+    PhongShader(const Model &m, vec3 light_dir) : model(m){
+        uniform_l = normalized((ModelView*vec4{light_dir.x, light_dir.y, light_dir.z, 0.}).xyz());
     }
 
     virtual vec4 vertex(const int face, const int vert) {
         vec3 v = model.vert(face, vert);                          // current vertex in object coordinates
+        vec3 n = model.normal(face, vert);
+        varying_nrm[vert] = (ModelView.invert_transpose() * vec4{n.x, n.y, n.z, 0.}).xyz();
         vec4 gl_Position = ModelView * vec4{v.x, v.y, v.z, 1.};
         tri[vert] = gl_Position.xyz();                            // in eye coordinates
-        if(vert==2){ // completed other verticies. can do math now!!
-            vec3 frag_centre = (tri[0] + tri[1] + tri[2])/3;
-            vec3 n = normalized(cross(tri[0]-tri[2], tri[0]-tri[1])); // fragment normal
-            vec3 l = normalized(-1*uniform_l); // light ray dir (originating from fragment)
-            vec3 r = normalized(2*n * dot(n, l)-l); // reflected light ray dir
-            vec3 v = normalized(-1 * frag_centre); // fragment to camera center
-
-            float cosalpha = fmax(0.2, dot(n, l)); // Diffuse (Lambert) intensity
-            float cosbeta  = fmax(0.0, dot(r, v)); // Specular intensity
-            float specular = pow(cosbeta, 5.0);    // Shininess exponent
-            //std::cout << cosbeta << '\n';
-            float col = fmin(1.0, 0.6 * cosalpha + 0.5 * specular);
-            color = {static_cast<uint8_t>(col*255),static_cast<uint8_t>(col*255),static_cast<uint8_t>(col*255),255};
-        }
         return Perspective * gl_Position;                         // in clip coordinates
     }
 
     virtual std::pair<bool,TGAColor> fragment(const vec3 bar) const {
-        return {false, color};                                    // do not discard the pixel
+       
+            TGAColor gl_FragColor = {255, 255, 255, 255};             // output color of the fragment
+    //      vec3 n = normalized(cross(tri[1]-tri[0], tri[2]-tri[0])); // triangle normal in eye coordinates
+            vec3 n = normalized(varying_nrm[0] * bar[0] +
+                                varying_nrm[1] * bar[1] +
+                                varying_nrm[2] * bar[2]);             // per-vertex normal interpolation
+            vec3 r = normalized(n * (n * uniform_l)*2 - uniform_l);                   // reflected light direction
+            double ambient = .3;                                      // ambient light intensity
+            double diff = std::max(0., n * uniform_l);                        // diffuse light intensity
+            double spec = std::pow(std::max(r.z, 0.), 35);            // specular intensity, note that the camera lies on the z-axis (in eye coordinates), therefore simple r.z, since (0,0,1)*(r.x, r.y, r.z) = r.z
+            for (int channel : {0,1,2})
+                gl_FragColor[channel] *= std::min(1., ambient + .4*diff + .9*spec);
+            return {false, gl_FragColor};                             // do not discard the pixel
+        
     }
 };
 

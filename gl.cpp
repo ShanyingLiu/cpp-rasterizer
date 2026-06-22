@@ -24,6 +24,7 @@ void init_zbuffer(const int width, const int height) {
     zbuffer = std::vector(width*height, -1000.);
 }
 
+
 void rasterize(const Triangle &clip, const IShader &shader, TGAImage &framebuffer) {
     vec4 ndc[3]    = { clip[0]/clip[0].w, clip[1]/clip[1].w, clip[2]/clip[2].w };                // normalized device coordinates
     vec2 screen[3] = { (Viewport*ndc[0]).xy(), (Viewport*ndc[1]).xy(), (Viewport*ndc[2]).xy() }; // screen coordinates
