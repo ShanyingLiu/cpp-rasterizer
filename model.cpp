@@ -21,11 +21,19 @@ Model::Model(const std::string filename) {
             vec3 n;
             for (int i : {0,1,2}) iss >> n[i];
             norms.push_back(normalized(n));
-        } else if (!line.compare(0, 2, "f ")) {
+        } else if(!line.compare(0, 3, "vt ")){
+            iss >> trash >> trash;
+            std::pair<float, float> n;
+            iss >> n.first; iss >> n.second;
+            iss >> trash;
+            vert_uv.push_back(n);
+        }
+        else if (!line.compare(0, 2, "f ")) {
             int f,t,n, cnt = 0;
             iss >> trash;
             while (iss >> f >> trash >> t >> trash >> n) {
                 facet_vrt.push_back(--f);
+                facet_tex.push_back(--t);
                 facet_nrm.push_back(--n);
                 cnt++;
             }
@@ -51,4 +59,8 @@ vec3 Model::vert(const int iface, const int nthvert) const {
 
 vec3 Model::normal(const int iface, const int nthvert) const {
     return norms[facet_nrm[iface*3+nthvert]];
+}
+
+std::pair<float,float> Model::uv(const int iface, const int nthvert) const {
+    return vert_uv[facet_tex[iface*3 + nthvert]];
 }
